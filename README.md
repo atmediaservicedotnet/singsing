@@ -29,3 +29,10 @@ Known problems
     This library will not work if compiled with 64bit support (-m64 of gcc).
     With more than 70KB/s of bandwidth the Linux kernel seems to loose packets.
 
+Branches
+========
+
+* `master`: stable release
+* `development`: next release (please send push requests on this branch)
+
+	
