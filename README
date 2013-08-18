@@ -1,0 +1,41 @@
+$Id: README 27 2007-11-27 21:13:05Z inode_ $
+
+ChangeLog
+----------------------------
+Changelog file
+
+README
+----------------------------
+This file
+
+singsing.c
+----------------------------
+singsing core engine
+
+singsing.h
+----------------------------
+singsing public include
+
+singsing_p.h
+----------------------------
+singsing private include
+
+examples/filippo.c
+----------------------------
+A simple socks v4&v5 scanner
+
+examples/ssh_scan.c
+----------------------------
+SSH scanner (no banner grabbing)
+
+examples/zucca.c
+----------------------------
+syn scanner
+
+examples/zuccorale.c
+----------------------------
+oracle scanner
+
+examples/telnet_grabber.c
+----------------------------
+telnet banner grabbing tool

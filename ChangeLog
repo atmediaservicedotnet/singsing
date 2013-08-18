@@ -1,0 +1,31 @@
+$Id: ChangeLog 28 2008-01-27 22:25:49Z inode_ $
+
+Version 0.5:
+------------------------
+* Added zuccorale.c on example
+* Added time statistics on zucca
+* Removed all global variables
+* Added show closed port on zucca
+* Fixed -p problem on filippo
+* Added ability to get closed port on singsing engine
+
+Version 0.4:
+------------------------
+* Added filippo.c (socks scanner) on example session
+* Added telnet_grabber.c on example session
+
+Version 0.3:
+------------------------
+* Added SINGSING_SEGMENT_SCAN mode
+* Fixed some unckecked variables at start
+
+Version 0.2:
+------------------------
+* Added SINGSING_NODUP_SCAN scanning mode, remove duplicate results
+* Added auto adjust sleep time on send syn procedures
+* Fixed a lot of inital bugs
+* Added examples section (zucca.c and ssh_scan.c)
+
+Version 0.1:
+------------------------
+* First release of this project

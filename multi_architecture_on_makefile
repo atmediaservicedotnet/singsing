@@ -1,0 +1,6 @@
+ARCH := $(shell getconf LONG_BIT)
+
+CPP_FLAGS_32 := -D32_BIT ...  Some 32 specific compiler flags ...
+CPP_FLAGS_64 := -D64_BIT
+
+CPP_FLAGS := $(CPP_FLAGS_$(ARCH))  ... all the other flags ...
