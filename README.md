@@ -14,7 +14,7 @@ Author
 
 Maurizio Agazzini aka inode
 
-example code
+Example code
 ============
 
 	fillippo.c 			search for port 1080 and check if it's a free socks v4 & v5
