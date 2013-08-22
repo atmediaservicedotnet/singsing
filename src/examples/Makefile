@@ -6,7 +6,7 @@ all:
 	@echo "make mac"
 
 linux: zucca.c filippo.c ssh_scan.c ../singsing.c ../singsing.h ../singsing_p.h
-	gcc  -DDEBUG -o zucca zucca.c ../singsing.c -I../ -lpcap -lpthread -Wall -ggdb
+	gcc  -o zucca zucca.c ../singsing.c -I../ -lpcap -lpthread -Wall -ggdb
 	gcc  -o ssh_scan ssh_scan.c ../singsing.c -I../ -lpcap -lpthread -Wall
 	gcc  -o filippo filippo.c ../singsing.c -I../ -lpcap -lpthread -Wall
 	gcc  -o telnet_grabber telnet_grabber.c ../singsing.c -I../ -lpcap -lpthread -Wall
