@@ -34,29 +34,17 @@
 
 
 #include "singsing.h"
+#include "appscan.h"
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
-#define ORACLE_PORT	1521
+#define ORACLE_PORT		1521
 #define READ_TIMEOUT	10
 #define CONNECT_TIMEOUT 30
 
 void usage( char * argv );
-int oracle_scan(char * host, unsigned int port, char * command, int len); 
-int socks_v5_scan(char * host, unsigned int port);
 
 unsigned int port = ORACLE_PORT;
-
-int connect_ip[4];
-unsigned int target_port;
-unsigned int target_port1;
-
-// WORKING 1
-char command1[]="\x00\x1e\x00\x06\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07\x76\x65\x72\x73\x69\x6f\x6e\x04\x62\x69\x6e\x64\x00\x00\x10\x00\x03";
-
-// WORKING 2
-char command2[]="\x00\x5a\x00\x00\x01\x00\x00\x00\x01\x36\x01\x2c\x00\x00\x08\x00\x7f\xff\x7f\x08\x00\x00\x00\x01\x00\x20\x00\x3a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\xe6\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x28\x43\x4f\x4e\x4e\x45\x43\x54\x5f\x44\x41\x54\x41\x3d\x28\x43\x4f\x4d\x4d\x41\x4e\x44\x3d\x76\x65\x72\x73\x69\x6f\x6e\x29\x29";
-
 
 
 int main(int argc, char ** argv)
@@ -68,17 +56,23 @@ int main(int argc, char ** argv)
         time_t start_time;
         time_t end_time;
 	int band = 5;
+	unsigned int nodup = 1;
+	int thread_num = 0;
 
 	struct singsing_result_queue * cur_res;
 
 	struct singsing_descriptor fd;
+
+	appscan_descriptor ad;
 
         fprintf(stderr, "\n zuccorale v%s with singsing v%s revision %s\n", VERSION, SINGSING_VERSION, SINGSING_REVISION);
 
 
 	singsing_create(&fd);
 
-	while((opt = getopt(argc, argv, "i:h:b:")) != -1)
+	appscan_create(&ad);
+
+	while((opt = getopt(argc, argv, "i:h:b:Nt:")) != -1)
 	{
 		switch (opt)
 		{
@@ -91,6 +85,12 @@ int main(int argc, char ** argv)
 			case 'b':
 				band = atoi( optarg );
 				break;
+			case 'N':
+				nodup = 0;
+				break;
+			case 't':
+				thread_num = atoi(optarg);
+				break;
 			default:
 				usage( argv[0] );
 		}
@@ -98,6 +98,9 @@ int main(int argc, char ** argv)
 
 	if( device == NULL || target == NULL )
 		usage( argv[0] );
+
+	if (thread_num)
+		appscan_set_thread_num( &ad, thread_num );
 
 	singsing_set_scan_interface( &fd, device );
 
@@ -107,10 +110,10 @@ int main(int argc, char ** argv)
 
 	singsing_add_port( &fd, port );
 
+	if ( nodup )
+		singsing_set_scanmode( &fd, SINGSING_NODUP_SCAN );
 
-        singsing_set_scanmode( &fd, SINGSING_NODUP_SCAN );
-
-        singsing_set_scanmode( &fd, SINGSING_SEGMENT_SCAN );
+	singsing_set_scanmode( &fd, SINGSING_SEGMENT_SCAN );
 
 	fprintf( stderr, "\n Starting scan...\n");
 
@@ -123,11 +126,13 @@ int main(int argc, char ** argv)
 		if( cur_res != NULL ) {
 			result.s_addr = ntohl(cur_res->ip);
 
+			#ifdef DEBUG
 			fprintf(stderr," Oracle port found on ip: %s\n",inet_ntoa( result ));
+			#endif
 
-			if( oracle_scan(strdup(inet_ntoa( result )), port, command1, sizeof(command1)) < 1 )
-				oracle_scan(strdup(inet_ntoa( result )), port, command2, sizeof(command2));
-			
+			if ( appscan_run_scan( ORACLE, &ad, inet_ntoa( result ), ORACLE_PORT , CONNECT_TIMEOUT, READ_TIMEOUT ) )
+				fprintf( stderr, "Warning! Cannot create appscan thread for host %s port %u\n", inet_ntoa(result), ORACLE_PORT );
+
 			fflush(stderr);
 			fflush(stdout);
 			
@@ -137,10 +142,14 @@ int main(int argc, char ** argv)
  
 	} while( singsing_scanisfinished(&fd) != 2 || cur_res != NULL);
 
+		//Wait for appscan results
+		appscan_wait_scans_results( &ad );
 
         end_time = time(NULL);
 
         fprintf( stderr, "\n Scan end in %.0lf seconds\n\n", difftime(end_time, start_time));
+
+		appscan_destroy( &ad );
 
         singsing_destroy(&fd);
 
@@ -150,147 +159,11 @@ int main(int argc, char ** argv)
 
 void usage( char * argv )
 {
-	fprintf(stderr, "\n Usage: %s -i <arg> -h <arg> [-b <arg>]\n", argv);
+	fprintf(stderr, "\n Usage: %s -i <arg> -h <arg> [-b <arg>] [-N]\n", argv);
 	fprintf(stderr, "\t-i Interface\n");
 	fprintf(stderr, "\t-h Target (CIDR format)\n");
 	fprintf(stderr, "\t-b Bandwidth (Default 5KB/s)\n\n");
+	fprintf(stderr, "\t-N Disable NODUP scan\n");
+	fprintf(stderr, "\t-t Max number of threads used to process singsing results (DEFAULT=16,MAX=64)\n\n");
 	exit(0);
 } 
-
-int net_connect( char * host, int port)
-{
-	int sd;
-	struct sockaddr_in servAddr;
-	int flags, flags_old, retval;
-	unsigned int sock_len;
-	struct sockaddr_in sin;
-	struct timeval tv;
-	fd_set rfds;
-
-	servAddr.sin_family = AF_INET;
-	//memcpy((char *) &servAddr.sin_addr.s_addr, h->h_addr_list[0], h->h_length);
-	servAddr.sin_addr.s_addr = inet_addr(host);
-	servAddr.sin_port = htons( port );
-
-	sd = socket(AF_INET, SOCK_STREAM, 0);
-	if(sd<0) {
-		perror("cannot open socket ");
-		exit(1);
-	}
-
-	// Set Non Blocking Socket
-	flags_old = fcntl( sd, F_GETFL,0);
-	flags = flags_old;
-	flags |= O_NONBLOCK;
-	fcntl( sd, F_SETFL, flags);
-
-	if( connect(sd, (struct sockaddr *) &servAddr, sizeof(servAddr)) == 0) {
-		fcntl( sd, F_SETFL, flags_old);
-		return sd;
-	}
-	
-	// Set timeout
-	tv.tv_sec = CONNECT_TIMEOUT;
-	tv.tv_usec = 0;
-
-	FD_ZERO(&rfds);
-	FD_SET(sd, &rfds);
-	
-	retval = select(FD_SETSIZE, NULL, &rfds, NULL, &tv);
-
-	// if retval < 0 error
-	if( retval < 0 ) {
-		close( sd );
-		return -1;
-	}
-	sock_len = sizeof( sin );
-
-	// Check if port closed
-	if( retval ) {
-		if( getpeername( sd, (struct  sockaddr  *) &sin, &sock_len) < 0 ) {
-			close( sd );
-			return -1;
-		} else {
-			// XXX
-			fcntl( sd, F_SETFL, flags_old);
-			return sd;
-		}
-	}
-	close( sd );
-	return -1;
-
-} 
-
-
-int oracle_scan(char * host, unsigned int port, char * command, int len)
-{
-	int sock, flags,i,l;
-	char buff[2000];
-        struct timeval tv;
-	char * p;
-        time_t cur_time;
-        time_t start_time;
-
-
-	fd_set rfds; 
-
-	memset( buff, 0, sizeof(buff));
-
-	p = buff;
-	l = 0;
-
-	sock = net_connect(host, port);
-
-	if( sock < 0 )
-		return 0;
-
-	target_port1 = htons( target_port );
-
-	write(sock,command, len );
-
-        tv.tv_sec = READ_TIMEOUT;
-        tv.tv_usec = 0;
-
-        flags = fcntl( sock, F_GETFL,0);
-        flags |= O_NONBLOCK;
-        fcntl( sock, F_SETFL, flags);
-
-	FD_ZERO( &rfds );
-	FD_SET( sock, &rfds );
-
-        start_time = time(NULL);
-
-	while( select( FD_SETSIZE , &rfds, (fd_set *) 0, (fd_set *) 0, &tv) > 0) {
-		i = read( sock, buff ,sizeof( buff )); 
-		l += i;
-
-		cur_time = time(NULL);
-
-		if( i < 0) {
-			close( sock );
-			return 0;
-		}
-
-		if( l >= 8) 
-			break;
-			
-		// resolving CLOSE_WAIT problems
-		if( difftime(cur_time, start_time) > READ_TIMEOUT) {
-			close( sock );
-			return 0;
-		}
-
-		
-			
-		usleep(3000);
-		p += i;
-	}
-
-	if( l > 0 )
-		fprintf(stderr, "  Oracle response at ip: %s read %u bytes\n", host,l);
-		
-	close(sock);
-	return l;
-} 
-
-

@@ -34,16 +34,16 @@
 
 
 #include "singsing.h"
+#include "appscan.h"
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 #define PORT	23
-#define READ_TIMEOUT	15
+
+#define READ_TIMEOUT    15
 #define CONNECT_TIMEOUT 20
 
 void usage( char * argv );
-int telnet_scan(char * host, unsigned int port); 
-
 
 int main(int argc, char ** argv)
 {
@@ -51,17 +51,23 @@ int main(int argc, char ** argv)
 	char * device = NULL;
 	char opt;
 	struct in_addr result;
-        time_t start_time;
-        time_t end_time;
+	time_t start_time;
+	time_t end_time;
 	int band = 5;
+	unsigned int nodup = 1;
+	int thread_num = 0;
 
 	struct singsing_result_queue * cur_res;
 
-        struct singsing_descriptor fd;
+    struct singsing_descriptor fd;
 
-        singsing_create(&fd);
+	appscan_descriptor ad;
 
-	while((opt = getopt(argc, argv, "i:h:b:")) != -1)
+    singsing_create(&fd);
+
+	appscan_create(&ad);
+
+	while((opt = getopt(argc, argv, "i:h:b:Nt:")) != -1)
 	{
 		switch (opt)
 		{
@@ -74,6 +80,12 @@ int main(int argc, char ** argv)
 			case 'b':
 				band = atoi( optarg );
 				break;
+			case 'N':
+				nodup = 0;
+				break;
+			case 't':
+				thread_num = atoi(optarg);
+				break;
 			default:
 				usage( argv[0] );
 		}
@@ -81,6 +93,9 @@ int main(int argc, char ** argv)
 
 	if( target == NULL || device == NULL )
 		usage( argv[0] );
+
+	if (thread_num)
+		appscan_set_thread_num( &ad, thread_num );
 
 	singsing_set_scan_interface( &fd, device );
 
@@ -90,9 +105,10 @@ int main(int argc, char ** argv)
 
 	singsing_add_port( &fd, PORT );
 
-        singsing_set_scanmode( &fd, SINGSING_NODUP_SCAN );
+	if ( nodup )
+		singsing_set_scanmode( &fd, SINGSING_NODUP_SCAN );
 
-        singsing_set_scanmode( &fd, SINGSING_SEGMENT_SCAN );
+	singsing_set_scanmode( &fd, SINGSING_SEGMENT_SCAN );
 
 	fprintf( stderr, "Starting scan...\n");
 
@@ -106,8 +122,13 @@ int main(int argc, char ** argv)
 			result.s_addr = ntohl(cur_res->ip);
 
 			// Grab banner
-			telnet_scan( strdup(inet_ntoa( result )), PORT);
-			
+			#ifdef DEBUG
+			fprintf(stderr, "\nreceived result for host %s\n",inet_ntoa( result ));
+			#endif
+			if ( appscan_run_scan( TELNET, &ad, inet_ntoa( result ), PORT, CONNECT_TIMEOUT, READ_TIMEOUT ) ) {
+				fprintf( stderr, "Warning! Cannot create appscan thread for host %s port %u\n", inet_ntoa(result), PORT );
+			}
+
 			fflush(stderr);
 			fflush(stdout);
 			
@@ -118,9 +139,16 @@ int main(int argc, char ** argv)
 	} while( singsing_scanisfinished( &fd ) != 2 || cur_res != NULL);
 
 
+		//Wait for appscan results
+		appscan_wait_scans_results( &ad );
+
         end_time = time(NULL);
 
         fprintf( stderr, "\n Scan end in %.0lf seconds\n\n", difftime(end_time, start_time));
+		fflush(stderr);
+		fflush(stdout);
+
+		appscan_destroy( &ad );
 
         singsing_destroy( &fd );
 
@@ -130,142 +158,11 @@ int main(int argc, char ** argv)
 
 void usage( char * argv )
 {
-	fprintf(stderr, "\n Usage: %s -i <arg> -h <arg> [-b <arg>]\n", argv);
+	fprintf(stderr, "\n Usage: %s -i <arg> -h <arg> [-b <arg>] [-N]\n", argv);
 	fprintf(stderr, "\t-i Interface\n");
 	fprintf(stderr, "\t-h Target (CIDR format)\n");
 	fprintf(stderr, "\t-b Bandwidth (Default 5KB/s)\n");
+	fprintf(stderr, "\t-N Disable NODUP scan\n");
+	fprintf(stderr, "\t-t Max number of threads used to process singsing results (DEFAULT=16,MAX=64)\n\n");
 	exit(0);
-} 
-
-int net_connect( char * host, int port)
-{
-	int sd;
-	struct sockaddr_in servAddr;
-	int flags, flags_old, retval;
-	unsigned int sock_len;
-	struct sockaddr_in sin;
-	struct timeval tv;
-	fd_set rfds;
-
-	servAddr.sin_family = AF_INET;
-	//memcpy((char *) &servAddr.sin_addr.s_addr, h->h_addr_list[0], h->h_length);
-	servAddr.sin_addr.s_addr = inet_addr(host);
-	servAddr.sin_port = htons( port );
-
-	sd = socket(AF_INET, SOCK_STREAM, 0);
-	if(sd<0) {
-		perror("cannot open socket ");
-		exit(1);
-	}
-
-	// Set Non Blocking Socket
-	flags_old = fcntl( sd, F_GETFL,0);
-	flags = flags_old;
-	flags |= O_NONBLOCK;
-	fcntl( sd, F_SETFL, flags);
-
-	if( connect(sd, (struct sockaddr *) &servAddr, sizeof(servAddr)) == 0) {
-		fcntl( sd, F_SETFL, flags_old);
-		return sd;
-	}
-	
-	// Set timeout
-	tv.tv_sec = CONNECT_TIMEOUT;
-	tv.tv_usec = 0;
-
-	FD_ZERO(&rfds);
-	FD_SET(sd, &rfds);
-	
-	retval = select(FD_SETSIZE, NULL, &rfds, NULL, &tv);
-
-	// if retval < 0 error
-	if( retval < 0 ) {
-		close( sd );
-		return -1;
-	}
-	sock_len = sizeof( sin );
-
-	// Check if port closed
-	if( retval ) {
-		if( getpeername( sd, (struct  sockaddr  *) &sin, &sock_len) < 0 ) {
-			close( sd );
-			return -1;
-		} else {
-			// XXX
-			fcntl( sd, F_SETFL, flags_old);
-			return sd;
-		}
-	}
-	close( sd );
-	return -1;
-
-} 
-
-
-int telnet_scan(char * host, unsigned int port)
-{
-	int sock, flags,i,l;
-	char buff[2000];
-        struct timeval tv;
-	char * p;
-        time_t cur_time;
-        time_t start_time;
-
-	fd_set rfds; 
-
-	memset( buff, 0, sizeof(buff));
-
-	p = buff;
-	l = 0;
-
-	sock = net_connect(host, port);
-
-	if( sock < 0 )
-		return 0;
-
-	write(sock,"\r\n\r\n\r\n",6);
-
-        tv.tv_sec = READ_TIMEOUT;
-        tv.tv_usec = 0;
-
-        flags = fcntl( sock, F_GETFL,0);
-        flags |= O_NONBLOCK;
-        fcntl( sock, F_SETFL, flags);
-
-	FD_ZERO( &rfds );
-	FD_SET( sock, &rfds );
-
-        start_time = time(NULL);
-
-	while( select( FD_SETSIZE , &rfds, (fd_set *) 0, (fd_set *) 0, &tv) > 0) {
-		i = read( sock, buff ,sizeof( buff )); 
-		l += i;
-
-		cur_time = time(NULL);
-
-		if( i < 0) {
-			close( sock );
-			return 0;
-		}
-
-		if( l >= 30) 
-			break;
-			
-		// resolving CLOSE_WAIT problems
-		if( difftime(cur_time, start_time) > READ_TIMEOUT) {
-			close( sock );
-			return 0;
-		}
-
-		
-			
-		usleep(3000);
-		p += i;
-	}
-
-	fprintf(stdout, "***** %s *****\n%s\n", host,buff);
-	fflush( stdout);
-
-	close(sock);
-	return 0;
 } 

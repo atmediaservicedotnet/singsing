@@ -53,12 +53,14 @@ void usage( char * argv0 );
 void tty_raw( void );
 void tty_normal( void );
 int getch( void );
+int check_address( char * address );
 
 int main( int argc, char ** argv )
 {
 
 	char opt;
  	char * ports = NULL;
+	char * addresses_file_name = NULL;
 	char buf[200];
 
 	struct singsing_result_queue * cur_res;
@@ -76,7 +78,7 @@ int main( int argc, char ** argv )
 
 	singsing_create(&fd);
 
-	while((opt = getopt(argc, argv, "i:b:p:h:ct:s")) != -1)
+	while((opt = getopt(argc, argv, "i:b:p:h:ct:sf:a")) != -1)
 	{
 		switch (opt)
                 {
@@ -98,6 +100,12 @@ int main( int argc, char ** argv )
 			case 's':
 				stats = 0;
 				break;
+			case 'f':
+				addresses_file_name = optarg;
+				break;
+			case 'a':
+				singsing_set_accurate_scan_mode( &fd );
+				break;
 			default :
 				usage(argv[0]);
 				break;
@@ -116,6 +124,7 @@ int main( int argc, char ** argv )
 
 	fprintf(stderr, " Ports per host  : %u\n", host_ports);
 
+	singsing_parse_addresses_to_exclude_file( &fd, addresses_file_name );
 
 	singsing_set_scanmode( &fd, SINGSING_NODUP_SCAN );
 	singsing_set_scanmode( &fd, SINGSING_SEGMENT_SCAN );
@@ -238,16 +247,19 @@ void parse_port( struct singsing_descriptor * fd, char * ports )
 	return;
 }
 
+
 void usage( char * argv0 )
 {
 	fprintf( stderr, " Usage:\n");
-	fprintf( stderr, "  %s -h <arg> -i <arg> [-b <arg>] [-p <arg>] [-c]\n\n",argv0);
+	fprintf( stderr, "  %s -h <arg> -i <arg> [-b <arg>] [-p <arg>] [-c] [-f <arg>] [-a]\n\n",argv0);
 	fprintf( stderr, " -h Host/s to scan  (ex 192.168.0.0/24)\n");
 	fprintf( stderr, " -i Interface\n");
 	fprintf( stderr, " -b Usable bandwidth in KB (Default 15)\n");
 	fprintf( stderr, " -p Ports (ex 22,23,40-50,99)\n");   
  	fprintf( stderr, " -c Display closed ports\n");
-	fprintf( stderr, " -s Don't use stats\n\n");
+	fprintf( stderr, " -s Don't use stats\n");
+	fprintf( stderr, " -f IP addresses exclusion list file\n");
+	fprintf( stderr, " -a Accurate scan flag: receive packet in the scanning range only\n\n");
 
 	exit( EXIT_FAILURE );
 }

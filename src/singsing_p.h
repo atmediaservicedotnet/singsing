@@ -53,6 +53,22 @@ unsigned long singsing_get_ip(struct singsing_descriptor * fd,char* interface) ;
 int singsing_bind_port( struct singsing_descriptor * fd,unsigned long ip );
 
 
+struct singsing_address_to_exclude_list {
+	//char addr[ADDR_FROM_FILE_MAX_SIZE]; 
+	unsigned long addr;
+	unsigned long interval;
+	struct singsing_address_to_exclude_list * prev;
+	struct singsing_address_to_exclude_list * next;
+};
+
+struct singsing_addresses_excluded_tree {
+
+	unsigned long value;
+	unsigned long interval;
+	struct singsing_addresses_excluded_tree * leftChild;
+	struct singsing_addresses_excluded_tree * rightChild;
+
+};
 
 struct singsing_port_list {
 	long port;

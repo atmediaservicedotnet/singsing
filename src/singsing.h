@@ -64,6 +64,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h> 
+#include <ctype.h>
 
 #ifdef SOLARIS
 #include <sys/sockio.h>
@@ -83,6 +84,12 @@
 
 #define SINGSING_OPEN		0
 #define SINGSING_CLOSE		1
+
+#define ADDR_FROM_FILE_MAX_SIZE		19
+#define ADDR_MASK_MAX_SIZE			19
+#define NO_ADDRESS_FOUND			0
+#define IP_FOUND					1
+#define	NETMASK_FOUND				2
 
 struct singsing_result_queue {
 	unsigned long ip;
@@ -112,6 +119,8 @@ struct singsing_descriptor {
 	u_short singsing_ipid;
 	int singsing_finished;
 	unsigned int singsing_ports;
+	unsigned int singsing_addresses_excluded_total;
+	unsigned int singsing_excluded_addresses_nodes;
 	unsigned long singsing_sleep_band;
 	unsigned long singsing_synps;
 	int singsing_raw_socket;
@@ -119,10 +128,23 @@ struct singsing_descriptor {
 	pthread_t singsing_thread_id[3];
 	unsigned long singsing_cur_port;
 	unsigned int singsing_scan_mode;
+	unsigned int singsing_accurate_scan_mode;
+	char * singsing_input_addresses;
+	unsigned int singsing_input_address_type;
 
 	// Data lists
 	struct singsing_port_list * singsing_first_port;
 	struct singsing_port_list * singsing_last_port;
+
+	struct singsing_address_to_exclude_list * singsing_first_addr_to_excl;
+	struct singsing_address_to_exclude_list * singsing_last_addr_to_excl;
+
+	//AVL tree: excluded addresses
+	struct singsing_addresses_excluded_tree * singsing_address_excluded_root;
+	//AVL min value
+	unsigned long singsing_min_addr_excluded;
+	//AVL max value
+	unsigned long singsing_max_addr_excluded;
 
 	struct singsing_result_queue * singsing_first_result;
 	struct singsing_result_queue * singsing_last_result;
@@ -134,6 +156,7 @@ struct singsing_descriptor {
 	struct singsing_packet_queue * singsing_last_packet;
 
 	struct singsing_status_struct singsing_cur_status;
+
 };
 
 // Prototypes
@@ -148,6 +171,25 @@ void singsing_set_bandwidth( struct singsing_descriptor * fd, int a);
 void singsing_get_status( struct singsing_descriptor * fd, struct singsing_status_struct * cur );
 void singsing_set_scanmode( struct singsing_descriptor * fd, int a );
 struct singsing_result_queue * singsing_get_result( struct singsing_descriptor * fd );
-
+void singsing_get_addresses_to_scan_from_file( const char * filename ); 
+void singsing_parse_addresses_to_exclude_file( struct singsing_descriptor * fd, char * addresses_file_name );
+int address_not_excluded(struct singsing_descriptor * fd, unsigned long ip); 
+int singsing_add_netmask_to_exclude( struct singsing_descriptor * fd, char * netaddr ); 
+int singsing_add_address_to_exclude( struct singsing_descriptor * fd, unsigned long address);
+int singsing_add_net_to_exclude( struct singsing_descriptor * fd, char * base_addr, unsigned long interval ); 
+void singsing_create_address_to_exclude_list(struct singsing_descriptor * fd); 
+void singsing_set_accurate_scan_mode( struct singsing_descriptor * fd );
+int singsing_validate_ipv4( const char * ipv4 );
+int singsing_check_ipv4( const char * ipv4 ); 
+void singsing_destroy_address_to_exclude_list( struct singsing_descriptor * fd );
+struct singsing_addresses_excluded_tree * singsing_create_avl( struct singsing_address_to_exclude_list * list_start, int length); 
+struct singsing_addresses_excluded_tree * singsing_create_avl_worker(  struct singsing_address_to_exclude_list * start_node, int length); 
+void singsing_destroy_avl( struct singsing_addresses_excluded_tree * root ); 
+struct singsing_addresses_excluded_tree * singsing_create_avl_node( unsigned long value, unsigned long interval); 
+unsigned long singsing_get_max_avl_node( struct singsing_descriptor * fd );
+unsigned long singsing_get_min_avl_node( struct singsing_descriptor * fd ); 
+//For debug purpose
+void singsing_print_avl( struct singsing_addresses_excluded_tree * root); 
+void singsing_print_ip_from_value(unsigned long ip, char * text); 
 #endif 
 
